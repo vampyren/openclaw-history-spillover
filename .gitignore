@@ -4,3 +4,4 @@ coverage/
 artifacts/
 backups/
 *.log
+backups/
