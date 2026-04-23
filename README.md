@@ -1,19 +1,78 @@
 # openclaw-history-spillover
 
-Prototype and patch workspace for durable OpenClaw chat history spillover.
+Durable spillover for oversized OpenClaw chat history entries.
 
-## Goal
+## Why this exists
 
-Prevent oversized chat/session history entries from disappearing behind placeholders by spilling full oversized payloads to artifact files and keeping compact references in history.
+OpenClaw currently protects the UI by replacing oversized history entries with a placeholder such as:
 
-## Scope
+- `[chat.history omitted: message too large]`
 
-- Backup current OpenClaw state before changes
-- Patch oversized history handling
-- Preserve full payloads on disk
-- Keep UI history compact
-- Add tests and docs
+That avoids payload blowups, but it can hide the original content from normal history views. This project implements a safer behavior:
+
+- persist the full oversized entry to a file on disk
+- keep a compact stub in history
+- include byte size, preview text, and spillover file path in the stub
 
 ## Status
 
-Work in progress.
+Prototype implemented and tested locally.
+
+## Features
+
+- Spill oversized history entries to `history-oversize/*.json`
+- Keep a readable compact marker in history
+- Preserve original payloads on disk
+- Provide a reusable spillover module for testing and refinement
+- Include local patch/apply/revert scripts and automated tests
+
+## Project structure
+
+- `src/spillover.js` — reusable spillover logic
+- `tests/spillover.test.mjs` — automated tests
+- `docs/design.md` — design notes
+- `backups/` — original state snapshots taken before patching
+
+## Current live patch target
+
+The current prototype patches the installed OpenClaw distribution file:
+
+- `/usr/lib/node_modules/openclaw/dist/chat-xN4niR21.js`
+
+## How it works
+
+When a chat history message exceeds the byte threshold:
+
+1. the original message is written to a JSON artifact file
+2. the history item is replaced with a compact stub
+3. the stub includes:
+   - spill marker
+   - original byte size
+   - spillover file path
+   - preview text
+
+## Development
+
+### Run tests
+
+```bash
+npm test
+```
+
+### Patch helper commands
+
+```bash
+npm run apply:patch
+npm run verify:patch
+npm run revert:patch
+```
+
+## Caveats
+
+- This is currently a prototype patch against the installed dist file, not a polished upstream PR yet.
+- The live system still needs one clean end-to-end verification run after patching.
+- GitHub publishing depends on available auth from this environment.
+
+## License
+
+MIT
