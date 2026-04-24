@@ -1,54 +1,35 @@
 # Publishing notes
 
-## Current state
+## Current publish flow
 
-The project is locally complete enough to publish, but GitHub publishing from this host is currently blocked by missing auth.
+This repo is published through GitHub using normal git/gh credentials available in the host environment.
 
-## What was checked
+## Security posture
 
-- `gh` CLI is not authenticated here
-- no `~/.config/gh/hosts.yml`
-- no `~/.git-credentials` with GitHub credentials
-- browser attach to a signed-in Chrome profile failed because Chrome remote debugging was not available
+- install/apply/verify/revert code paths do not make network calls
+- patch state is recorded locally in the OpenClaw install under `.openclaw-history-spillover/installed.json`
+- backups use content-addressed filenames based on the pre-patch SHA-256
+- release archives should be published as release assets, not kept in git history
 
-## Fastest ways to unblock publishing
-
-### Option 1: GitHub CLI login on the host
-
-Run on the host:
+## Fast verification after install
 
 ```bash
-gh auth login
+npm test
+npm run apply:patch -- --dry-run
+npm run apply:patch
+npm run verify:patch
 ```
 
-Recommended choices:
-- GitHub.com
-- HTTPS
-- Login with browser
-
-Then verify:
+## Revert
 
 ```bash
-gh auth status
+npm run revert:patch
 ```
 
-### Option 2: Add a PAT for git/gh
+## Suggested release process
 
-A token with repo creation/push permissions would allow:
-
-```bash
-gh repo create ...
-git push ...
-```
-
-### Option 3: Start signed-in Chrome with remote debugging
-
-If the user browser is available with remote debugging, browser automation can create the repo in the signed-in GitHub session.
-
-## Suggested repo name
-
-- `openclaw-history-spillover`
-
-## Suggested first release
-
-- `v0.1.0`
+1. run tests
+2. apply or verify against a target install
+3. rebuild `source.zip`
+4. attach `source.zip` to a GitHub release
+5. keep backup/state files out of git history

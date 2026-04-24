@@ -1,9 +1,12 @@
 {
   "name": "openclaw-history-spillover",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Durable spillover for oversized OpenClaw chat history entries.",
   "type": "module",
   "private": false,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node --test",
     "verify:patch": "python3 scripts/verify_installed_patch.py",

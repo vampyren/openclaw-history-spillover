@@ -1,7 +1,7 @@
+.learnings/
 node_modules/
 coverage/
 .tmp/
 artifacts/
 backups/
 *.log
-backups/
