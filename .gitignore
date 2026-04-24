@@ -5,3 +5,7 @@ coverage/
 artifacts/
 backups/
 *.log
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/

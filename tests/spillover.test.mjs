@@ -12,7 +12,8 @@ import {
   extractChatHistoryPreview,
   jsonUtf8Bytes,
   replaceOversizedChatHistoryMessages,
-  safeSerializeForSpillover
+  safeSerializeForSpillover,
+  serializeChatHistoryMessageForBytes
 } from '../src/spillover.js';
 
 function makeTempDir(t) {
@@ -25,6 +26,18 @@ test('jsonUtf8Bytes returns 0 for undefined', () => {
   assert.equal(jsonUtf8Bytes(undefined), 0);
 });
 
+test('serializeChatHistoryMessageForBytes returns text and byteLength', () => {
+  const out = serializeChatHistoryMessageForBytes({ a: 1 });
+  assert.equal(out.text, '{"a":1}');
+  assert.equal(out.byteLength, 7);
+});
+
+test('serializeChatHistoryMessageForBytes handles undefined', () => {
+  const out = serializeChatHistoryMessageForBytes(undefined);
+  assert.equal(out.text, undefined);
+  assert.equal(out.byteLength, 0);
+});
+
 test('safeSerializeForSpillover serializes basic values', () => {
   const out = safeSerializeForSpillover({ a: 1 });
   assert.match(out, /"a": 1/);
@@ -33,6 +46,13 @@ test('safeSerializeForSpillover serializes basic values', () => {
 test('extractChatHistoryPreview truncates on code points', () => {
   const out = extractChatHistoryPreview('😀😀😀', 2);
   assert.equal(out, '😀😀\n…[truncated preview]');
+});
+
+test('extractChatHistoryPreview uses supplied serialized text', () => {
+  // Pass a serializedText that's deliberately different from what we'd get
+  // from the message — proves the function used the provided cache.
+  const out = extractChatHistoryPreview({ a: 1 }, 100, 'CACHED_TEXT');
+  assert.equal(out, 'CACHED_TEXT');
 });
 
 test('buildOversizedHistorySpilloverPlaceholder writes spillover file with safe perms', (t) => {
@@ -57,6 +77,8 @@ test('buildOversizedHistorySpilloverPlaceholder writes spillover file with safe 
   assert.equal(payload.byteLength > 0, true);
   const stat = fs.statSync(placeholder.__openclaw.spilloverFile);
   assert.equal(stat.mode & 0o777, 0o600);
+  const dirStat = fs.statSync(path.dirname(placeholder.__openclaw.spilloverFile));
+  assert.equal(dirStat.mode & 0o777, 0o700);
 });
 
 test('buildOversizedHistorySpilloverPlaceholder falls back to omitted placeholder on write failure', () => {
@@ -72,6 +94,8 @@ test('buildOversizedHistorySpilloverPlaceholder falls back to omitted placeholde
 
 test('replaceOversizedChatHistoryMessages validates maxSingleMessageBytes', () => {
   assert.throws(() => replaceOversizedChatHistoryMessages({ messages: [], maxSingleMessageBytes: undefined }), /maxSingleMessageBytes/);
+  assert.throws(() => replaceOversizedChatHistoryMessages({ messages: [], maxSingleMessageBytes: -1 }), /maxSingleMessageBytes/);
+  assert.throws(() => replaceOversizedChatHistoryMessages({ messages: [], maxSingleMessageBytes: Infinity }), /maxSingleMessageBytes/);
 });
 
 test('replaceOversizedChatHistoryMessages only replaces oversized items and keeps boundary item', (t) => {

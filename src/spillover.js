@@ -6,9 +6,24 @@ export const CHAT_HISTORY_PREVIEW_MAX_CHARS = 1200;
 export const CHAT_HISTORY_SPILLED_MARKER = '[chat.history spilled: message too large]';
 export const CHAT_HISTORY_OMITTED_MARKER = '[chat.history omitted: message too large]';
 
+export function serializeChatHistoryMessageForBytes(value) {
+  try {
+    const text = JSON.stringify(value);
+    return {
+      text,
+      byteLength: text === undefined ? 0 : Buffer.byteLength(text, 'utf8')
+    };
+  } catch (err) {
+    const fallback = JSON.stringify({ error: String(err), fallback: String(value) });
+    return {
+      text: fallback,
+      byteLength: Buffer.byteLength(fallback, 'utf8')
+    };
+  }
+}
+
 export function jsonUtf8Bytes(value) {
-  const serialized = JSON.stringify(value);
-  return serialized === undefined ? 0 : Buffer.byteLength(serialized, 'utf8');
+  return serializeChatHistoryMessageForBytes(value).byteLength;
 }
 
 export function safeSerializeForSpillover(value) {
@@ -19,9 +34,11 @@ export function safeSerializeForSpillover(value) {
   }
 }
 
-export function extractChatHistoryPreview(message, maxChars = CHAT_HISTORY_PREVIEW_MAX_CHARS) {
+export function extractChatHistoryPreview(message, maxChars = CHAT_HISTORY_PREVIEW_MAX_CHARS, serializedText) {
   try {
-    const raw = typeof message === 'string' ? message : safeSerializeForSpillover(message);
+    const raw = typeof message === 'string'
+      ? message
+      : (serializedText ?? safeSerializeForSpillover(message));
     const chars = Array.from(raw);
     return chars.length > maxChars ? `${chars.slice(0, maxChars).join('')}\n…[truncated preview]` : raw;
   } catch {
@@ -63,17 +80,22 @@ export function persistOversizedHistoryMessage(message, options = {}) {
   const pathModule = options.pathModule ?? path;
   const now = options.now ?? Date.now();
   const transcriptPath = options.transcriptPath;
-  const baseDir = transcriptPath ? pathModule.dirname(transcriptPath) : pathModule.join(options.cwd ?? process.cwd(), '.openclaw-history');
+  const baseDir = transcriptPath
+    ? pathModule.dirname(transcriptPath)
+    : pathModule.join(options.cwd ?? process.cwd(), '.openclaw-history');
   const dir = ensureChatHistorySpilloverDir(baseDir, { fsModule, pathModule });
   const ts = new Date(now).toISOString().replace(/[:.]/g, '-');
   const sessionPart = sanitizeIdPart(options.sessionId || 'session', 'session');
   const idPart = sanitizeIdPart(options.messageId || now, 'message');
   const filePath = pathModule.join(dir, `${ts}-${sessionPart}-${idPart}.json`);
+  const byteLength = options.serialized
+    ? options.serialized.byteLength
+    : jsonUtf8Bytes(message);
   const payload = {
     createdAt: new Date(now).toISOString(),
     sessionId: options.sessionId ?? null,
     transcriptPath: transcriptPath ?? null,
-    byteLength: jsonUtf8Bytes(message),
+    byteLength,
     message
   };
   const tmpPath = `${filePath}.tmp-${process.pid}-${now}`;
@@ -84,11 +106,12 @@ export function persistOversizedHistoryMessage(message, options = {}) {
 
 export function buildOversizedHistorySpilloverPlaceholder(message, options = {}) {
   const now = options.now ?? Date.now();
-  const preview = extractChatHistoryPreview(message, options.previewMaxChars);
-  const byteLength = jsonUtf8Bytes(message);
+  const serialized = options.serialized ?? serializeChatHistoryMessageForBytes(message);
+  const preview = extractChatHistoryPreview(message, options.previewMaxChars, serialized.text);
+  const byteLength = serialized.byteLength;
   let filePath;
   try {
-    filePath = persistOversizedHistoryMessage(message, options);
+    filePath = persistOversizedHistoryMessage(message, { ...options, serialized });
   } catch {
     return buildOversizedHistoryOmittedPlaceholder(message, { now });
   }
@@ -108,14 +131,26 @@ export function buildOversizedHistorySpilloverPlaceholder(message, options = {})
   };
 }
 
-export function replaceOversizedChatHistoryMessages({ messages, maxSingleMessageBytes, transcriptPath, sessionId, now, fsModule, pathModule, cwd } = {}) {
+export function replaceOversizedChatHistoryMessages({
+  messages,
+  maxSingleMessageBytes,
+  transcriptPath,
+  sessionId,
+  now,
+  fsModule,
+  pathModule,
+  cwd
+} = {}) {
   if (typeof maxSingleMessageBytes !== 'number' || !Number.isFinite(maxSingleMessageBytes) || maxSingleMessageBytes < 0) {
     throw new TypeError('maxSingleMessageBytes must be a finite non-negative number');
   }
-  if (!Array.isArray(messages) || messages.length === 0) return { messages: messages ?? [], replacedCount: 0 };
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { messages: messages ?? [], replacedCount: 0 };
+  }
   let replacedCount = 0;
   const next = messages.map((message, index) => {
-    if (jsonUtf8Bytes(message) <= maxSingleMessageBytes) return message;
+    const serialized = serializeChatHistoryMessageForBytes(message);
+    if (serialized.byteLength <= maxSingleMessageBytes) return message;
     replacedCount += 1;
     return buildOversizedHistorySpilloverPlaceholder(message, {
       transcriptPath,
@@ -124,7 +159,8 @@ export function replaceOversizedChatHistoryMessages({ messages, maxSingleMessage
       now,
       fsModule,
       pathModule,
-      cwd
+      cwd,
+      serialized
     });
   });
   return { messages: replacedCount > 0 ? next : messages, replacedCount };
